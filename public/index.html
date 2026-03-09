@@ -809,7 +809,12 @@ const API_BASE = 'https://maride.onrender.com';
 // ── Auth ───────────────────────────────────────────────
 function getToken() { return localStorage.getItem('forcap_token') || ''; }
 function getUser()  {
-  try { return JSON.parse(atob(getToken().split('.')[1] || '')); }
+  try {
+    const part = getToken().split('.')[1] || '';
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '=='.slice(0, (4 - b64.length % 4) % 4);
+    return JSON.parse(atob(padded));
+  }
   catch(e) { return null; }
 }
 
