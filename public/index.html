@@ -810,6 +810,10 @@ const API_BASE = 'https://maride.onrender.com';
 function getToken() { return localStorage.getItem('forcap_token') || ''; }
 function getUser()  {
   try {
+    // Server returns plain token + user object separately
+    const stored = localStorage.getItem('forcap_user');
+    if (stored) return JSON.parse(stored);
+    // Fallback: try JWT decode
     const part = getToken().split('.')[1] || '';
     const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
     const padded = b64 + '=='.slice(0, (4 - b64.length % 4) % 4);
@@ -833,12 +837,14 @@ async function doLogin() {
     const data = await res.json();
     if (!res.ok) { errEl.textContent = data.error || 'Login failed'; return; }
     localStorage.setItem('forcap_token', data.token);
+    if (data.user) localStorage.setItem('forcap_user', JSON.stringify(data.user));
     initApp();
   } catch(e) { errEl.textContent = 'Cannot reach server.'; }
 }
 
 function doLogout() {
   localStorage.removeItem('forcap_token');
+  localStorage.removeItem('forcap_user');
   document.getElementById('appShell').style.display   = 'none';
   document.getElementById('loginScreen').style.display = 'flex';
 }
