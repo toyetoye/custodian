@@ -853,10 +853,23 @@ function initApp() {
 let _toastTimer;
 
 function toast(msg) {
-  const el = document.getElementById('toast');
+  const el = document.getElementById('toastEl');
+  if (!el) return;
   el.textContent = msg;
   el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2800);
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// ── Globals ────────────────────────────────────────────
+let custVesselId = null;
+let custEquipment = [];
+let hoEditId = null;
+
+function getCurrentUser() { return getUser(); }
+
+function trail(msg) {
+  console.log('[trail]', msg);
 }
 
 // ── Fetch interceptor: prepend API_BASE + inject token ─
@@ -2294,6 +2307,194 @@ function editCheckItem(clId, idx) {
 // ═══════════════════════════════════════════════════════
 
 
+
+// ── Missing modal / action stubs ───────────────────────
+
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('open');
+}
+
+function openEqModal(id) {
+  // Equipment detail modal — prompt basic edit for now
+  const eq = custEquipment.find(e => e.id === id);
+  if (!eq) return;
+  const desig = prompt('Custodian designation for ' + eq.name + ':', eq.custodian_designation || '');
+  if (desig === null) return;
+  fetch('/api/custodian/equipment/' + id, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+    body: JSON.stringify({ custodian_designation: desig })
+  }).then(() => { toast('Updated'); loadEquipmentRegistry(); });
+}
+
+function openDefectModal() {
+  const eqName = prompt('Equipment name:');
+  if (!eqName) return;
+  const title = prompt('Defect description:');
+  if (!title) return;
+  fetch('/api/custodian/defects', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+    body: JSON.stringify({ vessel_id: custVesselId, equipment_name: eqName, title, description: title, severity: 'medium', status: 'open' })
+  }).then(() => { toast('Defect raised'); loadDefects(); });
+}
+
+function openTrModal() {
+  const eqName = prompt('Equipment name:');
+  if (!eqName) return;
+  const desc = prompt('Temp repair description:');
+  if (!desc) return;
+  const expiry = prompt('Expiry date (YYYY-MM-DD):', new Date(Date.now()+30*86400000).toISOString().substring(0,10));
+  fetch('/api/custodian/temp-repairs', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+    body: JSON.stringify({ vessel_id: custVesselId, equipment_name: eqName, description: desc, expiry_date: expiry, status: 'active', raised_by: getCurrentUser()?.name || '' })
+  }).then(() => { toast('Temp repair logged'); loadTempRepairs(); });
+}
+
+function openAlarmModal() {
+  const eqName = prompt('Equipment name:');
+  if (!eqName) return;
+  const desc = prompt('Alarm description:');
+  if (!desc) return;
+  fetch('/api/custodian/alarms', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+    body: JSON.stringify({ vessel_id: custVesselId, equipment_name: eqName, description: desc, status: 'open', logged_by: getCurrentUser()?.name || '' })
+  }).then(() => { toast('Alarm logged'); loadAlarms(); });
+}
+
+function openHandoverModal() {
+  const u = getCurrentUser();
+  openHandoverForm(u?.id, u?.name || '', u?.designation || '');
+}
+
+function resolveDefect(id) {
+  fetch('/api/custodian/defects/' + id, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+    body: JSON.stringify({ status: 'resolved' })
+  }).then(() => { toast('Defect resolved'); loadDefects(); });
+}
+
+function closeTempRepair(id) {
+  fetch('/api/custodian/temp-repairs/' + id + '/close', {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+    body: JSON.stringify({})
+  }).then(() => { toast('Temp repair closed'); loadTempRepairs(); });
+}
+
+function closeAlarm(id) {
+  fetch('/api/custodian/alarms/' + id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+    body: JSON.stringify({ status: 'cleared' })
+  }).then(() => { toast('Alarm cleared'); loadAlarms(); });
+}
+
+function addWoRef(id) {
+  const ref = prompt('Work Order reference:');
+  if (!ref) return;
+  fetch('/api/custodian/alarms/' + id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+    body: JSON.stringify({ work_order_ref: ref })
+  }).then(() => { toast('WO reference added'); loadAlarms(); });
+}
+
+function openAddStepModal(defectId) {
+  const text = prompt('Troubleshooting step:');
+  if (!text) return;
+  const manualRef = confirm('Was maker manual consulted?');
+  fetch('/api/custodian/defects/' + defectId + '/step', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+    body: JSON.stringify({ text, manual_referenced: manualRef, by: getCurrentUser()?.name || '', at: new Date().toISOString() })
+  }).then(() => { toast('Step added'); loadDefects(); });
+}
+
+function quickLogDefect(eqId, eqName) {
+  const title = prompt('Defect on ' + eqName + ':');
+  if (!title) return;
+  fetch('/api/custodian/defects', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+    body: JSON.stringify({ vessel_id: custVesselId, equipment_id: eqId, equipment_name: eqName, title, description: title, severity: 'medium', status: 'open', raised_by_name: getCurrentUser()?.name || '' })
+  }).then(() => { toast('Defect raised'); loadMyEquipment(); });
+}
+
+function quickLogTr(eqId, eqName) {
+  const desc = prompt('Temp repair on ' + eqName + ':');
+  if (!desc) return;
+  const expiry = prompt('Expiry date:', new Date(Date.now()+30*86400000).toISOString().substring(0,10));
+  fetch('/api/custodian/temp-repairs', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+    body: JSON.stringify({ vessel_id: custVesselId, equipment_id: eqId, equipment_name: eqName, description: desc, expiry_date: expiry, status: 'active', raised_by: getCurrentUser()?.name || '' })
+  }).then(() => { toast('Temp repair logged'); loadMyEquipment(); });
+}
+
+function quickLogAlarm(eqId, eqName) {
+  const desc = prompt('Alarm on ' + eqName + ':');
+  if (!desc) return;
+  fetch('/api/custodian/alarms', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+    body: JSON.stringify({ vessel_id: custVesselId, equipment_id: eqId, equipment_name: eqName, description: desc, status: 'open', logged_by: getCurrentUser()?.name || '' })
+  }).then(() => { toast('Alarm logged'); loadMyEquipment(); });
+}
+
+function quickLogPm(eqId, eqName) {
+  const date = prompt('PM completion date:', new Date().toISOString().substring(0,10));
+  if (!date) return;
+  const nextDate = prompt('Next PM due date:', new Date(Date.now()+90*86400000).toISOString().substring(0,10));
+  fetch('/api/custodian/pm-logs', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+    body: JSON.stringify({ vessel_id: custVesselId, equipment_id: eqId, equipment_name: eqName, date_completed: date, next_due: nextDate, done_by: getCurrentUser()?.name || '' })
+  }).then(async () => {
+    await fetch('/api/custodian/equipment/' + eqId, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+      body: JSON.stringify({ last_pm_date: date, next_pm_date: nextDate })
+    });
+    toast('PM logged'); loadMyEquipment();
+  });
+}
+
+function quickAddSpare(eqId, eqName) {
+  const name = prompt('Spare part name:');
+  if (!name) return;
+  const eq = custEquipment.find(e => e.id === eqId);
+  if (!eq) return;
+  const spares = eq.spare_parts || [];
+  spares.push({ id: 's' + Date.now().toString(36), name, status: 'pending' });
+  fetch('/api/custodian/equipment/' + eqId, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() },
+    body: JSON.stringify({ spare_parts: spares })
+  }).then(() => { toast('Spare part added'); loadMyEquipment(); });
+}
+
+function loadCrewChange() {
+  document.getElementById('crewChangeContent').innerHTML =
+    '<div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);padding:20px 0;">Crew change management coming soon.</div>';
+}
+
+async function loadHandovers() {
+  if (!custVesselId) return;
+  const el = document.getElementById('handoversContent');
+  const u = getCurrentUser();
+  const isSuper = isCustSupervisor();
+  const hoBtn = document.getElementById('hoNewBtn');
+  if (hoBtn) hoBtn.style.display = '';
+  el.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:var(--amber);">Loading…</div>';
+  try {
+    const res = await fetch('/api/custodian/handovers?vessel_id=' + custVesselId, { headers: { 'x-auth-token': getToken() } });
+    const handovers = await res.json();
+    if (!handovers.length) { el.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);padding:20px 0;">No handover notes recorded yet</div>'; return; }
+    el.innerHTML = handovers.map(h => `
+      <div class="ho-card ${h.signed_at ? 'ho-signed' : 'ho-pending'}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--text-bright);">${h.designation || h.department || '—'} HANDOVER</div>
+            <div style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:3px;">${h.handover_date || '—'} · ${h.outgoing_officer} → ${h.incoming_officer}</div>
+          </div>
+          <span style="font-family:var(--mono);font-size:9px;${h.signed_at ? 'color:var(--green);' : 'color:var(--amber);'}">${h.signed_at ? '✓ SIGNED' : 'PENDING'}</span>
+        </div>
+        ${h.outstanding_items ? `<div style="font-size:11px;color:var(--text);white-space:pre-line;">${h.outstanding_items}</div>` : ''}
+        ${h.equipment_health ? `<div style="font-size:11px;color:var(--text-dim);margin-top:6px;">${h.equipment_health}</div>` : ''}
+        <div style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:10px;">Signed by: ${h.signed_by || '—'}</div>
+      </div>`).join('');
+  } catch(e) { el.innerHTML = `<div style="color:var(--red);font-size:11px;">${e.message}</div>`; }
+}
 
 // ── Boot ───────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
