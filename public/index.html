@@ -64,8 +64,8 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .logout-btn:hover { color: var(--text); border-color: var(--border-light); }
 
 /* ── APP SHELL ── */
-.app-shell { display: flex; flex-direction: column; height: 100vh; }
-.app-body  { flex: 1; overflow: hidden; position: relative; }
+.app-shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.app-body  { flex: 1; overflow: hidden; position: relative; min-height: 0; }
 
 /* Override fixed positioning — fill the app-body instead */
 .cust-overlay {
@@ -130,11 +130,10 @@ select:focus, input:focus, textarea:focus { border-color:var(--amber); }
 
 /* ── CUSTODIAN MODULE ── */
 .cust-overlay {
-  position: fixed; inset: 52px 0 0 0;
+  position: absolute; inset: 0;
   background: var(--bg); z-index: 90;
-  display: none; flex-direction: column;
+  display: flex; flex-direction: column;
 }
-.cust-overlay.open { display: flex; }
 
 .cust-sidebar {
   width: 200px; flex-shrink: 0;
